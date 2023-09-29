@@ -5,6 +5,9 @@ import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 import { Pokemon } from './entities/pokemon.entity';
 import { InjectModel } from '@nestjs/mongoose';
 
+import { MongoError, MongoBulkWriteError } from 'mongodb';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
+
 @Injectable()
 export class PokemonService {
 
@@ -17,16 +20,20 @@ export class PokemonService {
     createPokemonDto.name = createPokemonDto.name.toLowerCase();
 
     try {
-      const pokemon = await this.pokemonModel.create(createPokemonDto);
-      return pokemon;
+      return await this.pokemonModel.create(createPokemonDto);
     } catch (error) {
-      if (typeof error === 'object' && 'keyValue' in error) 
-        this.handleException(error, `Pokemon exist in db ${JSON.stringify(error.keyValue)}`);
+      this.handleException(error);
     }
   }
 
-  findAll() {
-    return `This action returns all pokemon`;
+  public findAll(paginationDto: PaginationDto) {
+    const { limit = 10, offset = 0 } = paginationDto;
+
+    return this.pokemonModel.find()
+      .limit(limit)
+      .skip(offset)
+      .sort({no: 1})
+      .select('-__v');
   }
 
   public async findOne(term: string) {
@@ -63,7 +70,7 @@ export class PokemonService {
     try {
       await pokemon.updateOne(updatePokemonDto);
     } catch (error) {
-      if (typeof error === 'object' && 'keyValue' in error)
+      if (error instanceof MongoError && 'keyValue' in error)
         this.handleException(error, `Another pokemon exist in db with ${JSON.stringify(error.keyValue)}`);
     }
 
@@ -82,12 +89,50 @@ export class PokemonService {
     return result;
   }
 
-  private handleException(error: any, message: string) {
-    if (error.code === 11000) {
+
+  public async deleteAllPokemons() {
+    await this.pokemonModel.deleteMany({});
+  }
+
+  private handleException(error: any, _message: string = "") {
+    if (error instanceof MongoError && 'keyValue' in error) {
+      const message = (_message === "") ? `Pokemon exist in db ${JSON.stringify(error.keyValue)}` : _message;
+      console.log(error);
+
+      if (error.code === 11000) {
+        throw new BadRequestException(message);
+      } else {
+        throw new InternalServerErrorException(`Can't create Pokemon - Check server logs`);
+      }
+    }
+
+    if (error instanceof MongoBulkWriteError && error.code === 11000) {
+      console.log('Error code:', error.code);
+      console.log('Duplicate key:', error.writeErrors[0].err);
+      const message = (_message === "") ? `Pokemon exist in db ${JSON.stringify(error.writeErrors[0].err)}` : _message;
       throw new BadRequestException(message);
     }
-    console.log(error);
+
     throw new InternalServerErrorException(`Can't create Pokemon - Check server logs`);
+  }
+
+
+  public async fillDbPokemosWithSeed(createPokemonDto: CreatePokemonDto[]) {
+    try {
+      const result = await this.pokemonModel.insertMany(createPokemonDto);
+      const insertedIds = result.map(doc => doc._id);
+
+      return {
+        success: true,
+        insertedIds
+      }
+    } catch (error) {
+      this.handleException(error);
+
+      return {
+        success: false,
+      }
+    }
   }
 }
 
