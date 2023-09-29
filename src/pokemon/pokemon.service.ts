@@ -20,7 +20,8 @@ export class PokemonService {
       const pokemon = await this.pokemonModel.create(createPokemonDto);
       return pokemon;
     } catch (error) {
-      this.handleException(error, `Pokemon exist in db ${JSON.stringify(error.keyValue)}`);
+      if (typeof error === 'object' && 'keyValue' in error) 
+        this.handleException(error, `Pokemon exist in db ${JSON.stringify(error.keyValue)}`);
     }
   }
 
@@ -62,7 +63,8 @@ export class PokemonService {
     try {
       await pokemon.updateOne(updatePokemonDto);
     } catch (error) {
-      this.handleException(error, `Another pokemon exist in db with ${JSON.stringify(error.keyValue)}`);
+      if (typeof error === 'object' && 'keyValue' in error)
+        this.handleException(error, `Another pokemon exist in db with ${JSON.stringify(error.keyValue)}`);
     }
 
     return { ...pokemon.toJSON(), ...updatePokemonDto };
